@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>CRM — Gisèle Theodose</title>
+  <meta name="theme-color" content="#3b3b3d">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/crm.css">
+</head>
+<body>
+
+<!-- Connexion -->
+<div class="login" id="login" hidden>
+  <form class="login__box" id="loginForm">
+    <div class="logo">meg<b>A</b>gence</div>
+    <h1>Espace CRM</h1>
+    <p class="muted">Réservé à Gisèle Theodose</p>
+    <label class="f"><span>E-mail</span><input type="email" name="email" required autocomplete="username"></label>
+    <label class="f"><span>Mot de passe</span><input type="password" name="password" required autocomplete="current-password"></label>
+    <p class="err" id="loginErr"></p>
+    <button class="btn btn--red btn--block" type="submit">Se connecter</button>
+  </form>
+</div>
+
+<!-- Application -->
+<div class="app" id="app" hidden>
+  <aside class="side">
+    <div class="side__brand"><span class="logo logo--light">meg<b>A</b>gence</span><small>CRM Gisèle</small></div>
+    <nav class="side__nav" id="nav">
+      <a href="#dashboard" data-view="dashboard"><i>◧</i><span>Tableau de bord</span></a>
+      <a href="#prospects" data-view="prospects"><i>☰</i><span>Prospects</span></a>
+      <a href="#mandats" data-view="mandats"><i>⌂</i><span>Mandats</span></a>
+      <a href="#relances" data-view="relances"><i>⏰</i><span>Relances</span><b class="pill" id="relCount" hidden></b></a>
+      <a href="#pige" data-view="pige"><i>⌕</i><span>Pige</span></a>
+    </nav>
+    <div class="side__foot">
+      <button class="linkbtn" id="exportBtn">⤓ Exporter mes données</button>
+      <a class="linkbtn" href="../index.html" target="_blank">↗ Voir le site public</a>
+      <button class="linkbtn" id="logoutBtn">⏻ Déconnexion</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="demo" id="demoBanner" hidden>
+      <span><strong>Mode démo</strong> — les données (fictives) sont enregistrées uniquement dans ce navigateur. Configurez Supabase (README) pour passer en réel.</span>
+      <button class="linkbtn" id="resetDemo">Réinitialiser la démo</button>
+    </div>
+    <header class="main__head">
+      <h1 id="viewTitle">Tableau de bord</h1>
+      <div class="main__actions" id="viewActions"></div>
+    </header>
+    <section id="view" class="view"></section>
+  </main>
+</div>
+
+<!-- Fenêtre d'édition -->
+<dialog class="modal" id="modal">
+  <form method="dialog" class="modal__box" id="modalForm">
+    <header class="modal__head"><h2 id="modalTitle"></h2><button type="button" class="x" id="modalClose" aria-label="Fermer">×</button></header>
+    <div class="modal__body" id="modalBody"></div>
+    <footer class="modal__foot" id="modalFoot"></footer>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="../assets/js/config.js"></script>
+<script src="../assets/js/store.js"></script>
+<script src="../assets/js/crm.js"></script>
+</body>
+</html>
