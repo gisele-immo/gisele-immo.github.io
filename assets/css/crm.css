@@ -218,3 +218,15 @@ td .num { font-variant-numeric: tabular-nums; }
   #tMap { height: 45vh; min-height: 260px; }
   .side__nav a { font-size: .62rem; }
 }
+
+/* objectif contrat */
+.goal { margin-bottom: 16px; border-left: 4px solid var(--red); }
+.goal h3 { flex-wrap: wrap; }
+.goal h3 .badge { margin-left: auto; }
+.goal__nums { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.goal__nums strong { font-size: 1.8rem; color: var(--charcoal); font-variant-numeric: tabular-nums; }
+.goal__nums span { color: var(--muted); }
+.goal__track { display: flex; height: 14px; background: var(--bg); border-radius: 99px; overflow: hidden; }
+.goal__fill { background: var(--red); height: 100%; }
+.goal__fill--soft { background: repeating-linear-gradient(45deg, #e9a8ad 0 6px, #f3cdd0 6px 12px); }
+.goal__legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: .85rem; color: var(--muted); margin-top: 8px; }
