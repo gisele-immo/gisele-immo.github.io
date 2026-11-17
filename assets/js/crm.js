@@ -16,7 +16,8 @@
   const PIGE_SOURCES = [["leboncoin", "Leboncoin"], ["pap", "PAP"], ["seloger", "SeLoger"], ["boitage", "Boîtage / terrain"], ["autre", "Autre"]];
   const QUARTIERS = ["Centre-ville", "Mainguy", "Saule-Blanc", "Noue-Caillet", "Blanqui", "La Sablière", "Les Merisiers", "Pont-de-Bondy", "Bondy Nord", "Autre commune"].map((q) => [q, q]);
   /* Contrat megAgence : CA minimum par année civile, abonnement logiciels */
-  const CONTRAT = { objectifHT: 15000, abonnementTTC: 40.8 };
+  /* debutContrat : date de signature (AAAA-MM-JJ) — sert à savoir quand l'abonnement double. Laisser "" si inconnue. */
+  const CONTRAT = { objectifHT: 15000, abonnementTTC: 40.8, abonnementApres12MoisTTC: 81.6, debutContrat: "" };
   const lab = (list, k) => (list.find((x) => x[0] === k) || [k, k || "—"])[1];
 
   /* ---------------- Utilitaires ---------------- */
@@ -296,6 +297,16 @@
     </div>`;
   }
 
+  function aboText() {
+    const a1 = CONTRAT.abonnementTTC, a2 = CONTRAT.abonnementApres12MoisTTC;
+    let quand = "après les 12 premiers mois";
+    if (CONTRAT.debutContrat) {
+      const d = new Date(CONTRAT.debutContrat + "T00:00:00"); d.setMonth(d.getMonth() + 12);
+      quand = d <= new Date() ? `depuis le ${d.toLocaleDateString("fr-FR")}` : `à partir du ${d.toLocaleDateString("fr-FR")}`;
+    }
+    return `Abonnement Megsoft + Yanport : ${eur2(a1)} TTC/mois (${eur2(a1 * 12)}/an), puis <b>${eur2(a2)} TTC/mois</b> ${quand} (${eur2(a2 * 12)}/an). Gratuit à vie avec des filleuls.`;
+  }
+
   function objectifCard(sold, compromis, year) {
     const obj = CONTRAT.objectifHT;
     const pct = Math.min(100, Math.round((sold / obj) * 100));
@@ -304,7 +315,6 @@
     const end = new Date(Number(year), 11, 31);
     const jours = Math.max(0, Math.ceil((end - new Date()) / 86400000));
     const mois = Math.max(1, Math.ceil(jours / 30.4));
-    const abo = CONTRAT.abonnementTTC;
     const status = sold >= obj ? `<span class="badge badge--ok">Objectif atteint ✓</span>`
       : sold + compromis >= obj ? `<span class="badge badge--warn">Atteint si les compromis aboutissent</span>`
       : `<span class="badge badge--red">Reste ${eur(reste)} HT</span>`;
@@ -313,7 +323,7 @@
       <div class="goal__nums"><strong>${eur(sold)}</strong><span>sur ${eur(obj)} HT minimum (${pct} %)</span></div>
       <div class="goal__track" title="Réalisé ${pct} % · compromis ${pctC} %"><div class="goal__fill" style="width:${pct}%"></div><div class="goal__fill goal__fill--soft" style="width:${pctC}%"></div></div>
       <div class="goal__legend"><span><i class="kdot" style="background:var(--red)"></i>Ventes actées : ${eur(sold)}</span><span><i class="kdot" style="background:#e9a8ad"></i>Sous compromis : ${eur(compromis)}</span></div>
-      <p class="muted small" style="margin:10px 0 0">${sold >= obj ? "Bravo, le minimum annuel est atteint." : `Il reste ${jours} jour(s) avant le 31 décembre, soit environ <b>${eur(reste / mois)} HT par mois</b> à réaliser.`} · Abonnement Megsoft + Yanport : ${eur2(abo)} TTC/mois (soit ${eur2(abo * 12)} TTC/an, gratuit à vie avec des filleuls).</p>
+      <p class="muted small" style="margin:10px 0 0">${sold >= obj ? "Bravo, le minimum annuel est atteint." : `Il reste ${jours} jour(s) avant le 31 décembre, soit environ <b>${eur(reste / mois)} HT par mois</b> à réaliser.`} · ${aboText()}</p>
     </div>`;
   }
 
