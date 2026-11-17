@@ -234,6 +234,7 @@
     mandats: { title: "Mandats", render: viewMandats, actions: () => [btn("+ Mandat", "btn btn--red", () => editMandat())] },
     relances: { title: "Relances", render: viewRelances, actions: () => [btn("+ Relance", "btn btn--red", () => editTache())] },
     pige: { title: "Pige & prospection", render: viewPige, actions: () => [btn("+ Annonce / piste", "btn btn--red", () => editPige())] },
+    tournee: { title: "Tournée", render: viewTournee, actions: () => [btn("📍 Ma position", "btn", locateMe), btn("🧭 Itinéraire de la sélection", "btn btn--red", routeSelection)] },
   };
   function searchBox() {
     const i = document.createElement("input");
@@ -361,9 +362,187 @@
       </tr>`).join("")}</tbody></table></div>` : `<div class="card"><p class="empty">Aucune annonce suivie pour l'instant.</p></div>`}`;
   }
 
+  /* ---------------- Tournée géolocalisée ---------------- */
+  const BONDY = [48.9022, 2.4831];
+  const KINDS = { lead: ["Prospect", "#a8141e"], mandat: ["Mandat", "#1d1b1a"], pige: ["Pige", "#b8976a"] };
+  const GEO_KEY = "gt_geocache_v1";
+  let geoCache = {};
+  try { geoCache = JSON.parse(localStorage.getItem(GEO_KEY) || "{}"); } catch (e) { geoCache = {}; }
+  const saveGeo = () => { try { localStorage.setItem(GEO_KEY, JSON.stringify(geoCache)); } catch (e) { /* ignore */ } };
+  Object.assign(ui, { tf: "tous", pos: null, sel: new Set() });
+  let tMap = null, tLayer = null;
+
+  function fullAddress(adresse, quartier) {
+    const a = String(adresse || "").trim();
+    if (!a) return "";
+    return /\d{5}/.test(a) || quartier === "Autre commune" ? a : `${a}, 93140 Bondy`;
+  }
+  function places() {
+    const out = [];
+    D.leads.filter((l) => l.statut !== "perdu").forEach((l) => out.push({ kind: "lead", id: l.id, name: l.nom, sub: `${lab(LEAD_STATUTS, l.statut)} · ${lab(PROJETS, l.projet)}`, tel: l.telephone, addr: fullAddress(l.adresse, l.quartier), quartier: l.quartier }));
+    D.mandats.filter((m) => ["actif", "offre", "compromis"].includes(m.statut)).forEach((m) => out.push({ kind: "mandat", id: m.id, name: `${m.reference || "Mandat"} · ${m.vendeur_nom || ""}`, sub: `${lab(MANDAT_STATUTS, m.statut)} · ${eur(m.prix)}`, tel: m.vendeur_tel, addr: fullAddress(m.adresse, m.quartier), quartier: m.quartier }));
+    D.piges.filter((p) => ["a_contacter", "contacte", "rdv"].includes(p.statut)).forEach((p) => out.push({ kind: "pige", id: p.id, name: p.contact || `Annonce ${lab(PIGE_SOURCES, p.source)}`, sub: `${lab(PIGE_STATUTS, p.statut)} · ${lab(TYPES, p.type_bien)}${p.prix ? " · " + eur(p.prix) : ""}`, tel: p.telephone, addr: fullAddress(p.adresse, p.quartier), quartier: p.quartier }));
+    out.forEach((p) => { p.key = `${p.kind}:${p.id}`; p.geo = p.addr ? geoCache[p.addr] : null; });
+    return out;
+  }
+  function km(a, b) {
+    const R = 6371, r = Math.PI / 180, dLat = (b[0] - a[0]) * r, dLon = (b[1] - a[1]) * r;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  const fkm = (d) => (d < 1 ? `${Math.round(d * 1000)} m` : `${d.toFixed(1).replace(".", ",")} km`);
+  const gmapsTo = (g) => `https://www.google.com/maps/dir/?api=1&destination=${g.lat},${g.lon}&travelmode=driving`;
+  const wazeTo = (g) => `https://waze.com/ul?ll=${g.lat},${g.lon}&navigate=yes`;
+
+  async function geocode(addr) {
+    const u = `https://data.geopf.fr/geocodage/search?q=${encodeURIComponent(addr)}&limit=1&lat=${BONDY[0]}&lon=${BONDY[1]}`;
+    const r = await fetch(u);
+    if (!r.ok) throw new Error("géocodage " + r.status);
+    const f = (await r.json()).features?.[0];
+    return f ? { lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], label: f.properties.label, score: f.properties.score } : { none: true };
+  }
+  async function geocodeMissing() {
+    const todo = [...new Set(places().filter((p) => p.addr && !geoCache[p.addr]).map((p) => p.addr))];
+    if (!todo.length) return;
+    const info = $("#tInfo"); if (info) info.textContent = `Localisation de ${todo.length} adresse(s)…`;
+    for (const a of todo) {
+      try { geoCache[a] = await geocode(a); } catch (e) { console.warn(e); break; }
+    }
+    saveGeo();
+    if (tMap) tMap._fitted = false;
+    if (currentView() === "tournee") drawTournee();
+  }
+
+  function visiblePlaces() {
+    let list = places().filter((p) => ui.tf === "tous" || p.kind === ui.tf);
+    list.forEach((p) => { p.dist = ui.pos && p.geo && !p.geo.none ? km(ui.pos, [p.geo.lat, p.geo.lon]) : null; });
+    return list.sort((a, b) => (a.dist ?? 1e9) - (b.dist ?? 1e9) || a.kind.localeCompare(b.kind) || String(a.name).localeCompare(String(b.name)));
+  }
+
+  function viewTournee() {
+    const all = places();
+    const chips = [["tous", "Tout"], ["lead", "Prospects"], ["mandat", "Mandats"], ["pige", "Pige"]]
+      .map(([k, l]) => `<button class="chip ${ui.tf === k ? "is-on" : ""}" data-tf="${k}">${l} (${all.filter((p) => k === "tous" || p.kind === k).length})</button>`).join("");
+    return `<div class="filters" style="margin-bottom:12px">${chips}</div>
+      <div class="tour">
+        <div class="tour__map"><div id="tMap"></div><div class="tour__legend">${Object.values(KINDS).map(([l, c]) => `<span><i style="background:${c}"></i>${l}</span>`).join("")}<span><i style="background:#2563eb"></i>Vous</span></div></div>
+        <div class="tour__side">
+          <p class="muted" id="tInfo"></p>
+          <div class="tour__bar"><label><input type="checkbox" id="tAll"> Tout sélectionner</label><span id="tSelCount"></span></div>
+          <div id="tList"></div>
+        </div>
+      </div>`;
+  }
+
+  function drawTournee() {
+    const list = visiblePlaces();
+    const located = list.filter((p) => p.geo && !p.geo.none);
+    const noAddr = list.filter((p) => !p.addr);
+    const notFound = list.filter((p) => p.geo && p.geo.none);
+    const pending = list.filter((p) => p.addr && !p.geo).length;
+    const info = $("#tInfo");
+    if (info) info.textContent = `${located.length} adresse(s) sur la carte${ui.pos ? " · triées par distance" : " · touchez « Ma position » pour trier par distance"}${pending ? ` · ${pending} en cours de localisation…` : ""}`;
+
+    const item = (p) => {
+      const g = p.geo && !p.geo.none ? p.geo : null;
+      return `<div class="tcard" data-key="${p.key}">
+        ${g ? `<input type="checkbox" data-tsel="${p.key}" ${ui.sel.has(p.key) ? "checked" : ""} aria-label="Sélectionner">` : `<span class="tcard__dot" style="background:${KINDS[p.kind][1]}"></span>`}
+        <div class="grow" data-topen="${p.key}">
+          <div class="tcard__name"><i class="kdot" style="background:${KINDS[p.kind][1]}"></i>${esc(p.name)}</div>
+          <div class="muted small">${esc(p.sub)}</div>
+          <div class="small">${p.addr ? esc(g ? g.label : p.addr) : `<em class="muted">Pas d'adresse — ouvrir la fiche pour la compléter</em>`}${g && g.score < 0.6 ? ` <span class="badge badge--warn">à vérifier</span>` : ""}</div>
+        </div>
+        <div class="tcard__act">
+          ${p.dist != null ? `<b class="dist">${fkm(p.dist)}</b>` : ""}
+          ${g ? `<a class="btn btn--sm btn--red" href="${gmapsTo(g)}" target="_blank" rel="noopener">Y aller</a><a class="btn btn--sm" href="${wazeTo(g)}" target="_blank" rel="noopener">Waze</a>` : ""}
+          ${p.tel ? `<a class="btn btn--sm" href="tel:${esc(String(p.tel).replace(/\s/g, ""))}">📞</a>` : ""}
+        </div>
+      </div>`;
+    };
+    $("#tList").innerHTML =
+      (located.length + pending ? list.filter((p) => p.addr && !(p.geo && p.geo.none)).map(item).join("") : `<div class="card"><p class="empty">Aucune adresse à afficher. Renseignez le champ « Adresse » des prospects, mandats ou annonces de pige.</p></div>`)
+      + (notFound.length ? `<h3 class="group-title red">Adresse introuvable (${notFound.length})</h3>${notFound.map(item).join("")}` : "")
+      + (noAddr.length ? `<h3 class="group-title">Sans adresse (${noAddr.length})</h3>${noAddr.map(item).join("")}` : "");
+
+    const selVisible = located.filter((p) => ui.sel.has(p.key)).length;
+    $("#tSelCount").textContent = selVisible ? `${selVisible} sélectionné(s)` : "";
+    $("#tAll").checked = located.length > 0 && selVisible === located.length;
+
+    $$("[data-tsel]").forEach((el) => el.addEventListener("change", () => { el.checked ? ui.sel.add(el.dataset.tsel) : ui.sel.delete(el.dataset.tsel); drawTournee(); }));
+    $$("[data-topen]").forEach((el) => el.addEventListener("click", () => openPlace(el.dataset.topen)));
+    $("#tAll").onchange = (e) => { located.forEach((p) => (e.target.checked ? ui.sel.add(p.key) : ui.sel.delete(p.key))); drawTournee(); };
+
+    if (!tMap || !window.L) return;
+    tLayer.clearLayers();
+    const pts = [];
+    located.forEach((p) => {
+      const ll = [p.geo.lat, p.geo.lon]; pts.push(ll);
+      L.circleMarker(ll, { radius: ui.sel.has(p.key) ? 10 : 8, color: "#fff", weight: 2, fillColor: KINDS[p.kind][1], fillOpacity: 1 })
+        .bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.sub)}<br><small>${esc(p.geo.label)}</small>${p.dist != null ? `<br><b>${fkm(p.dist)}</b>` : ""}<br><a href="${gmapsTo(p.geo)}" target="_blank" rel="noopener">Itinéraire →</a>`)
+        .addTo(tLayer);
+    });
+    if (ui.pos) { pts.push(ui.pos); L.circleMarker(ui.pos, { radius: 9, color: "#fff", weight: 3, fillColor: "#2563eb", fillOpacity: 1 }).bindPopup("Vous êtes ici").addTo(tLayer); }
+    if (!tMap._fitted) {
+      if (pts.length > 1) tMap.fitBounds(pts, { padding: [30, 30], maxZoom: 16 });
+      else if (pts.length === 1) tMap.setView(pts[0], 15);
+      tMap._fitted = pts.length > 0;
+    }
+  }
+
+  function openPlace(key) {
+    const [kind, id] = key.split(":");
+    if (kind === "lead") editLead(D.leads.find((x) => x.id === id));
+    else if (kind === "mandat") editMandat(D.mandats.find((x) => x.id === id));
+    else editPige(D.piges.find((x) => x.id === id));
+  }
+
+  function initTournee() {
+    if (tMap) { tMap.remove(); tMap = null; }
+    if (window.L) {
+      tMap = L.map("tMap", { zoomControl: true }).setView(BONDY, 14);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(tMap);
+      tLayer = L.layerGroup().addTo(tMap);
+    } else {
+      $("#tMap").innerHTML = `<p class="empty" style="padding:16px">Carte indisponible (pas de connexion ?). La liste reste utilisable.</p>`;
+    }
+    $$("[data-tf]").forEach((el) => el.addEventListener("click", () => { ui.tf = el.dataset.tf; render(); }));
+    drawTournee();
+    geocodeMissing();
+  }
+
+  function locateMe() {
+    if (!navigator.geolocation) return alert("La géolocalisation n'est pas disponible sur cet appareil.");
+    toast("Recherche de votre position…");
+    navigator.geolocation.getCurrentPosition(
+      (p) => { ui.pos = [p.coords.latitude, p.coords.longitude]; if (tMap) tMap._fitted = false; drawTournee(); toast("Position trouvée ✓"); },
+      (e) => alert(e.code === 1 ? "Autorisez la localisation pour ce site dans les réglages du navigateur." : "Position introuvable pour le moment, réessayez."),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
+  }
+
+  /* Itinéraire optimisé (plus proche voisin) vers Google Maps */
+  function routeSelection() {
+    let stops = places().filter((p) => ui.sel.has(p.key) && p.geo && !p.geo.none);
+    if (!stops.length) return alert("Cochez d'abord les adresses à visiter dans la liste.");
+    let cur = ui.pos || [stops[0].geo.lat, stops[0].geo.lon];
+    const ordered = [];
+    while (stops.length) {
+      let bi = 0, bd = Infinity;
+      stops.forEach((s, i) => { const d = km(cur, [s.geo.lat, s.geo.lon]); if (d < bd) { bd = d; bi = i; } });
+      const s = stops.splice(bi, 1)[0]; ordered.push(s); cur = [s.geo.lat, s.geo.lon];
+    }
+    if (ordered.length > 10) { alert(`Google Maps accepte 10 arrêts maximum : l'itinéraire prend les 10 plus proches. Les ${ordered.length - 10} suivants seront à faire ensuite.`); ordered.length = 10; }
+    const ll = (s) => `${s.geo.lat},${s.geo.lon}`;
+    const dest = ordered[ordered.length - 1];
+    const way = ordered.slice(0, -1).map(ll).join("|");
+    const url = `https://www.google.com/maps/dir/?api=1${ui.pos ? `&origin=${ui.pos[0]},${ui.pos[1]}` : ""}&destination=${ll(dest)}${way ? `&waypoints=${encodeURIComponent(way)}` : ""}&travelmode=driving`;
+    window.open(url, "_blank", "noopener");
+  }
+
   /* ---------------- Événements des vues ---------------- */
   function bindView(v) {
     const root = $("#view");
+    if (v === "tournee") { initTournee(); return; }
     $$("[data-lead]", root).forEach((el) => el.addEventListener("click", () => editLead(D.leads.find((l) => l.id === el.dataset.lead))));
     $$("[data-mandat]", root).forEach((el) => el.addEventListener("click", () => editMandat(D.mandats.find((m) => m.id === el.dataset.mandat))));
     $$("[data-pige]", root).forEach((el) => el.addEventListener("click", () => editPige(D.piges.find((p) => p.id === el.dataset.pige))));
