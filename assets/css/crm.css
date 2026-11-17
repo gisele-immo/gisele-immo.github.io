@@ -191,3 +191,30 @@ td .num { font-variant-numeric: tabular-nums; }
   .board { grid-auto-columns: 82%; scroll-snap-type: x mandatory; }
   .col { scroll-snap-align: start; }
 }
+
+/* tournée */
+.small { font-size: .85rem; }
+.tour { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.tour__map { position: sticky; top: 16px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+#tMap { height: calc(100vh - 190px); min-height: 380px; background: #e9e6e1; }
+.tour__legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 8px 12px; font-size: .8rem; color: var(--muted); border-top: 1px solid var(--line); }
+.tour__legend i, .kdot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+.tour__side #tInfo { margin: 0 0 8px; font-size: .88rem; }
+.tour__bar { display: flex; justify-content: space-between; align-items: center; font-size: .88rem; padding: 0 2px 8px; color: var(--muted); }
+.tour__bar label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.tour__bar input, .tcard input { accent-color: var(--red); width: 18px; height: 18px; }
+.tcard { display: flex; gap: 10px; align-items: flex-start; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; }
+.tcard input { margin-top: 2px; flex: none; }
+.tcard__dot { width: 18px; flex: none; }
+.tcard .grow { flex: 1; min-width: 0; cursor: pointer; }
+.tcard__name { font-weight: 700; }
+.tcard__act { display: flex; flex-direction: column; gap: 4px; align-items: stretch; flex: none; }
+.tcard__act .btn { justify-content: center; }
+.tcard__act .dist { text-align: right; font-variant-numeric: tabular-nums; color: var(--charcoal); font-size: .9rem; }
+.leaflet-popup-content a { color: var(--red); font-weight: 700; }
+@media (max-width: 820px) {
+  .tour { grid-template-columns: 1fr; }
+  .tour__map { position: static; }
+  #tMap { height: 45vh; min-height: 260px; }
+  .side__nav a { font-size: .62rem; }
+}
