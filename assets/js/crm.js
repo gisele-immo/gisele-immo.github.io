@@ -15,12 +15,15 @@
   const TYPES_MANDAT = [["simple", "Simple"], ["exclusif", "Exclusif"], ["semi_exclusif", "Semi-exclusif"]];
   const PIGE_SOURCES = [["leboncoin", "Leboncoin"], ["pap", "PAP"], ["seloger", "SeLoger"], ["boitage", "Boîtage / terrain"], ["autre", "Autre"]];
   const QUARTIERS = ["Centre-ville", "Mainguy", "Saule-Blanc", "Noue-Caillet", "Blanqui", "La Sablière", "Les Merisiers", "Pont-de-Bondy", "Bondy Nord", "Autre commune"].map((q) => [q, q]);
+  /* Contrat megAgence : CA minimum par année civile, abonnement logiciels */
+  const CONTRAT = { objectifHT: 15000, abonnementTTC: 40.8 };
   const lab = (list, k) => (list.find((x) => x[0] === k) || [k, k || "—"])[1];
 
   /* ---------------- Utilitaires ---------------- */
   const today = () => new Date().toISOString().slice(0, 10);
   const addDays = (n, from) => { const d = from ? new Date(from) : new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
   const daysUntil = (d) => Math.round((new Date(d + "T00:00:00") - new Date(today() + "T00:00:00")) / 86400000);
+  const eur2 = (n) => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(n);
   const eur = (n) => (n == null || n === "" ? "—" : new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n));
   const fdate = (d) => (d ? new Date(String(d).length === 10 ? d + "T00:00:00" : d).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) : "—");
   const telLink = (t) => (t ? `<a href="tel:${esc(String(t).replace(/\s/g, ""))}" onclick="event.stopPropagation()">📞 ${esc(t)}</a>` : "");
@@ -73,9 +76,9 @@
       { k: "vendeur_nom", l: "Vendeur", req: true }, { k: "vendeur_tel", l: "Téléphone vendeur", t: "tel" },
       { k: "adresse", l: "Adresse du bien", full: true }, { k: "quartier", l: "Quartier", t: "select", o: QUARTIERS, empty: true }, { k: "type_bien", l: "Type", t: "select", o: TYPES, empty: true },
       { k: "surface", l: "Surface (m²)", t: "number" }, { k: "pieces", l: "Pièces", t: "number" },
-      { k: "prix", l: "Prix de vente FAI (€)", t: "number" }, { k: "honoraires", l: "Honoraires (€)", t: "number" },
+      { k: "prix", l: "Prix de vente FAI (€)", t: "number" }, { k: "honoraires", l: "Vos honoraires HT (€)", t: "number" },
       { k: "date_debut", l: "Date de signature", t: "date" }, { k: "date_fin", l: "Fin de mandat / irrévocabilité", t: "date" },
-      { k: "nb_visites", l: "Nombre de visites", t: "number" }, { k: "notes", l: "Notes", t: "textarea", full: true },
+      { k: "date_acte", l: "Date de l'acte (vente)", t: "date" }, { k: "nb_visites", l: "Nombre de visites", t: "number" }, { k: "notes", l: "Notes", t: "textarea", full: true },
     ],
     tache: [
       { k: "titre", l: "Quoi faire ?", req: true, full: true }, { k: "echeance", l: "Pour quand ?", t: "date", req: true },
@@ -184,6 +187,7 @@
       values: isNew ? Object.assign({ type_mandat: "exclusif", statut: "actif", date_debut: today(), date_fin: addDays(90), nb_visites: 0 }, m) : m,
       hint: isNew ? "Astuce : un mandat exclusif est généralement signé pour 3 mois, puis reconductible. La date de fin sert aux alertes d'échéance." : "",
       onSave: async (v) => {
+        if (v.statut === "vendu" && !v.date_acte) v.date_acte = today();
         const row = isNew ? await S.insert("mandats", Object.assign({ lead_id: m.lead_id || null }, v)) : await S.update("mandats", m.id, v);
         if (after) await after(row);
         return row;
@@ -262,7 +266,7 @@
     const excl = live.length ? Math.round((live.filter((m) => m.type_mandat === "exclusif").length / live.length) * 100) : 0;
     const pipe = D.mandats.filter((m) => ["actif", "offre", "compromis"].includes(m.statut)).reduce((s, m) => s + (Number(m.honoraires) || 0), 0);
     const year = String(new Date().getFullYear());
-    const sold = D.mandats.filter((m) => m.statut === "vendu" && String(m.date_fin || m.created_at).startsWith(year)).reduce((s, m) => s + (Number(m.honoraires) || 0), 0);
+    const sold = D.mandats.filter((m) => m.statut === "vendu" && String(m.date_acte || m.date_fin || m.created_at).startsWith(year)).reduce((s, m) => s + (Number(m.honoraires) || 0), 0);
     const compromis = D.mandats.filter((m) => m.statut === "compromis").reduce((s, m) => s + (Number(m.honoraires) || 0), 0);
 
     const todo = todoItems().filter((t) => daysUntil(t.date) <= 0).slice(0, 7);
@@ -279,8 +283,9 @@
       <div class="kpi"><span>Mandats en vente</span><strong>${live.length}</strong><small>${excl} % en exclusivité</small></div>
       <div class="kpi"><span>Honoraires en portefeuille</span><strong>${eur(pipe)}</strong><small>en vente + sous compromis</small></div>
       <div class="kpi"><span>Sous compromis</span><strong>${eur(compromis)}</strong><small>à encaisser à l'acte</small></div>
-      <div class="kpi"><span>Honoraires vendus ${year}</span><strong>${eur(sold)}</strong><small>conversion prospect → mandat : ${conv} %</small></div>
+      <div class="kpi"><span>CA réalisé ${year} (HT)</span><strong>${eur(sold)}</strong><small>conversion prospect → mandat : ${conv} %</small></div>
     </div>
+    ${objectifCard(sold, compromis, year)}
     <div class="grid2">
       <div class="card"><h3>⏰ À faire aujourd'hui <a href="#relances">Tout voir →</a></h3>${todo.length ? `<ul class="list">${todo.map(todoLi).join("")}</ul>` : `<p class="empty">Rien d'urgent. C'est le moment de faire de la pige !</p>`}</div>
       <div class="card"><h3>📅 Mandats à échéance (30 j) <a href="#mandats">Mandats →</a></h3>${echeances.length ? `<ul class="list">${echeances.map((m) => `<li data-mandat="${m.id}" style="cursor:pointer"><span class="grow"><b>${esc(m.reference || "")} · ${esc(m.vendeur_nom || "")}</b><span class="sub">${esc(lab(TYPES_MANDAT, m.type_mandat))} · ${eur(m.prix)}</span></span>${echeanceBadge(m)}</li>`).join("")}</ul>` : `<p class="empty">Aucun mandat n'arrive à échéance. Pensez à proposer le renouvellement 15 jours avant.</p>`}</div>
@@ -288,6 +293,27 @@
     <div class="grid2">
       <div class="card"><h3>Entonnoir des prospects</h3><div class="bars">${LEAD_STATUTS.map(([k, l]) => { const n = D.leads.filter((x) => x.statut === k).length; return `<div class="bar"><span>${l}</span><div class="bar__track"><div class="bar__fill ${k === "mandat" ? "bar__fill--red" : ""}" style="width:${(n / maxS) * 100}%"></div></div><b>${n}</b></div>`; }).join("")}</div></div>
       <div class="card"><h3>D'où viennent les prospects ?</h3>${srcCounts.length ? `<div class="bars">${srcCounts.map(([l, n]) => `<div class="bar"><span>${l}</span><div class="bar__track"><div class="bar__fill" style="width:${(n / maxSrc) * 100}%"></div></div><b>${n}</b></div>`).join("")}</div>` : `<p class="empty">Pas encore de prospects.</p>`}</div>
+    </div>`;
+  }
+
+  function objectifCard(sold, compromis, year) {
+    const obj = CONTRAT.objectifHT;
+    const pct = Math.min(100, Math.round((sold / obj) * 100));
+    const pctC = Math.min(100 - pct, Math.round((compromis / obj) * 100));
+    const reste = Math.max(0, obj - sold);
+    const end = new Date(Number(year), 11, 31);
+    const jours = Math.max(0, Math.ceil((end - new Date()) / 86400000));
+    const mois = Math.max(1, Math.ceil(jours / 30.4));
+    const abo = CONTRAT.abonnementTTC;
+    const status = sold >= obj ? `<span class="badge badge--ok">Objectif atteint ✓</span>`
+      : sold + compromis >= obj ? `<span class="badge badge--warn">Atteint si les compromis aboutissent</span>`
+      : `<span class="badge badge--red">Reste ${eur(reste)} HT</span>`;
+    return `<div class="card goal">
+      <h3>🎯 Objectif contrat megAgence ${year} ${status}</h3>
+      <div class="goal__nums"><strong>${eur(sold)}</strong><span>sur ${eur(obj)} HT minimum (${pct} %)</span></div>
+      <div class="goal__track" title="Réalisé ${pct} % · compromis ${pctC} %"><div class="goal__fill" style="width:${pct}%"></div><div class="goal__fill goal__fill--soft" style="width:${pctC}%"></div></div>
+      <div class="goal__legend"><span><i class="kdot" style="background:var(--red)"></i>Ventes actées : ${eur(sold)}</span><span><i class="kdot" style="background:#e9a8ad"></i>Sous compromis : ${eur(compromis)}</span></div>
+      <p class="muted small" style="margin:10px 0 0">${sold >= obj ? "Bravo, le minimum annuel est atteint." : `Il reste ${jours} jour(s) avant le 31 décembre, soit environ <b>${eur(reste / mois)} HT par mois</b> à réaliser.`} · Abonnement Megsoft + Yanport : ${eur2(abo)} TTC/mois (soit ${eur2(abo * 12)} TTC/an, gratuit à vie avec des filleuls).</p>
     </div>`;
   }
 
